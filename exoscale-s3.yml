@@ -1,0 +1,134 @@
+---
+
+# Playbook to upload content to Exoscale S3 storage backend doing the following
+# steps:
+# - create a temporay file
+# - create a new bucket
+# - upload the temporary file
+# - download the temporary file using a classic url
+# - download the temporary file using the pre-signed url
+# - delete the file in the bucket
+# - delete the bucket
+# - assert the checksums match
+
+- name: Validate S3 operation on Exoscale
+  hosts: localhost
+  connection: local
+  vars:
+    file_size: 15M
+    bucket_name: "test-bucket-{{ '%Y-%m-%d %H:%M:%S' | strftime(ansible_date_time.epoch) | hash('sha1') }}"
+    region: ch-dk-2
+    url_prefix: ""
+    url: "{{ url_prefix }}sos-{{ region }}.exo.io"
+    pre_signed: yes
+  tasks:
+    - name: create temporary file
+      tempfile:
+        state: file
+      register: tmp_file
+
+    - name: generate dummy data in temp file {{ tmp_file.path }}
+      shell: head -c {{ file_size }} < /dev/urandom > {{ tmp_file.path }}
+
+    - name: fetch {{ tmp_file.path }} information
+      stat:
+        path: "{{ tmp_file.path }}"
+      register: upload_file
+
+    - name: create bucket {{ bucket_name }}
+      aws_s3:
+        aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY') }}"
+        aws_secret_key: "{{ lookup('env','AWS_SECRET_KEY') }}"
+        s3_url: "fakes3s://{{ url }}"
+        region: "{{ region }}"
+        bucket: "{{ bucket_name }}"
+        mode: create
+
+    - name: upload temp file to the bucket
+      aws_s3:
+        aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY') }}"
+        aws_secret_key: "{{ lookup('env','AWS_SECRET_KEY') }}"
+        s3_url: "fakes3s://{{ url }}"
+        region: "{{ region }}"
+        bucket: "{{ bucket_name }}"
+        mode: put
+        object: test.file
+        src: "{{ upload_file.stat.path }}"
+        permission: public-read
+        metadata: "checksum-md5={{ upload_file.stat.md5 }},checksum-sha256={{ upload_file.stat.checksum }}"
+      register: upload_result
+
+    - name: debug
+      debug:
+        var: upload_result
+
+    - name: create temporary file
+      tempfile:
+        state: file
+      register: tmp2_file
+
+    - name: download file through classic public url https://{{ url }}/{{ bucket_name }}/test.file
+      get_url:
+        url: "https://{{ url }}/{{ bucket_name }}/test.file"
+        dest: "{{ tmp2_file.path }}"
+        force: yes
+
+    - name: fetch {{ tmp2_file.path }} information
+      stat:
+        path: "{{ tmp2_file.path }}"
+      register: download_file
+
+    - name: create temporary file
+      tempfile:
+        state: file
+      register: tmp3_file
+      when: pre_signed
+
+    - name: download file through url parameter {{ upload_result.url }}
+      get_url:
+        url: "{{ upload_result.url }}"
+        dest: "{{ tmp3_file.path }}"
+        force: yes
+      when: pre_signed
+      ignore_errors: yes
+      register: download_state
+
+    - name: debug
+      debug:
+        var: download_state
+      when:
+        - pre_signed
+        - download_state.failed
+
+    - name: fetch {{ tmp3_file.path }} information
+      stat:
+        path: "{{ tmp3_file.path }}"
+      register: download_file_url
+      when: pre_signed
+
+    - name: delete bucket file
+      aws_s3:
+        aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY') }}"
+        aws_secret_key: "{{ lookup('env','AWS_SECRET_KEY') }}"
+        s3_url: fakes3s://{{ url }}
+        region: "{{ region }}"
+        bucket: "{{ bucket_name }}"
+        mode: delobj
+        object: test.file
+
+    - name: delete bucket {{ bucket_name }}
+      aws_s3:
+        aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY') }}"
+        aws_secret_key: "{{ lookup('env','AWS_SECRET_KEY') }}"
+        s3_url: fakes3s://{{ url }}
+        region: "{{ region }}"
+        bucket: "{{ bucket_name }}"
+        mode: delete
+
+    - name: validation
+      assert:
+        that:
+          - "upload_file.stat.md5 == download_file.stat.md5"
+          - "not pre_signed or not download_state.failed"
+          - "not pre_signed or upload_file.stat.md5 == download_file_url.stat.md5"
+        msg: "Checksum does not match between upload and download files"
