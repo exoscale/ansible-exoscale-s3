@@ -33,6 +33,8 @@
     - name: fetch {{ tmp_file.path }} information
       stat:
         path: "{{ tmp_file.path }}"
+        checksum_algorithm: sha256
+        get_md5: yes
       register: upload_file
 
     - name: create bucket {{ bucket_name }}
@@ -76,6 +78,7 @@
     - name: fetch {{ tmp2_file.path }} information
       stat:
         path: "{{ tmp2_file.path }}"
+        get_md5: yes
       register: download_file
 
     - name: create temporary file
@@ -103,6 +106,7 @@
     - name: fetch {{ tmp3_file.path }} information
       stat:
         path: "{{ tmp3_file.path }}"
+        get_md5: yes
       register: download_file_url
       when: pre_signed
 
