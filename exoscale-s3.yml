@@ -114,7 +114,7 @@
       aws_s3:
         aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY') }}"
         aws_secret_key: "{{ lookup('env','AWS_SECRET_KEY') }}"
-        s3_url: fakes3s://{{ url }}
+        s3_url: "fakes3s://{{ url }}"
         region: "{{ region }}"
         bucket: "{{ bucket_name }}"
         mode: delobj
@@ -124,7 +124,7 @@
       aws_s3:
         aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY') }}"
         aws_secret_key: "{{ lookup('env','AWS_SECRET_KEY') }}"
-        s3_url: fakes3s://{{ url }}
+        s3_url: "fakes3s://{{ url }}"
         region: "{{ region }}"
         bucket: "{{ bucket_name }}"
         mode: delete
